@@ -35,17 +35,19 @@ class Model(dict, metaclass=ModelMetaclass):
         return value
 
     @classmethod
-    async def find(cls, primarykey):
+    @asyncio.coroutine
+    def find(cls, primarykey):
         ' find object by primary key. '
-        rs = await select('%s where `%s`=?' % (cls.__select__, cls.__primary_key__), [primarykey], 1)
+        rs = yield from select('%s where `%s`=?' % (cls.__select__, cls.__primary_key__), [primarykey], 1)
         if len(rs) == 0:
             return None
         return cls(**rs[0])
 
-    async def save(self):
+    @asyncio.coroutine
+    def save(self):
         args = list(map(self.getValueOrDefault, self.__fields__))
         args.append(self.getValueOrDefault(self.__primary_key__))
-        rows = await execute(self.__insert__, args)
+        rows = yield from execute(self.__insert__, args)
         if rows != 1:
             logging.warning('failed to insert record: affected rows: %s' % rows)
 
@@ -61,7 +63,21 @@ class Model(dict, metaclass=ModelMetaclass):
             for key, value in kw.items():
                 args.append('%s=?' % key)
                 values.append(value)
-            rs = yield from select('where `%s`=?' % (cls.__select__, ' and ', join(key)), values)
+            rs = yield from select('%s where %s ' % (cls.__select__, ' and '.join(args)), values)
+        return rs
+
+    @classmethod
+    @asyncio.coroutine
+    def findByPage(cls,offset=1,limit=10,**kw):
+        if len(kw) == 0:
+            rs = yield from select('%s limit %s,%s' % (cls.__select__,offset,limit), None)
+        else:
+            args = []
+            values = []
+            for key, value in kw.items():
+                args.append('and %s=?' % key)
+                values.append(value)
+            rs = yield from select('%s where 1=1 %s limit %s,%s' % (cls.__select__,args,offset,limit),values)
         return rs
 
     @classmethod
